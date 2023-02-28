@@ -17,6 +17,6 @@
     "typescript": "^4.9.5"
   },
   "scripts": {
-    "log-article-titles": "ts-node-esm src/export-articles.ts"
+    "grab-old-articles": "ts-node-esm src/export-old-articles.ts"
   }
 }
