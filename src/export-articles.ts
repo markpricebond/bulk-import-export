@@ -37,7 +37,7 @@ async function transferOldArticlesToNewCMS() {
 
   // Query to extract old articles
   const query = gql`
-    query OldArticlesQuery {
+    query OldArticleQuery {
       contentBlock(where: { id: "cks7d8rx4c2b30c01cizy0cjb" }) {
         date
         title
@@ -68,42 +68,14 @@ async function transferOldArticlesToNewCMS() {
   await writeFile("queryOutput.json", JSON.stringify(data));
 
   // Mutation to add articles to new CMS project
-  const mutation = gql`
-    mutation AddOldArticleToNewProject(
-      $title: String!
-      $slug: String!
-      $mainBody: RichTextAST!
-      $asideBody: RichTextAST!
-    ) {
-      createArticle(
+  const bodyTextMutation = gql`
+    mutation CreateBodyTextComponent($body: RichTextAST!, $heading: String!) {
+      createComponent(
         data: {
-          title: $title
-          date: "2023-02-03T01:00:00Z"
-          description: "Article model doesn't have a summary field yet. We might put this in, but then where would it come from on the original content block?"
-          slug: $slug
-          indexed: true
-          hidden: false
-          featuredImage: {}
-          content: {
-            create: {
-              Collection: {
-                showHeading: false
-                heading: "AsideAndBody Collection Heading"
-                collectionType: AsideAndBody
-                body: $asideBody
-                contents: {
-                  create: {
-                    Component: {
-                      heading: "heading for the main body component"
-                      showHeading: false
-                      componentType: BodyText
-                      body: $mainBody
-                    }
-                  }
-                }
-              }
-            }
-          }
+          heading: $heading
+          showHeading: false
+          componentType: BodyText
+          body: $body
         }
       ) {
         id
@@ -125,15 +97,70 @@ async function transferOldArticlesToNewCMS() {
   const articleData = JSON.parse(json);
   const mutationVariables = {
     title: articleData.contentBlock.title,
-    slug: slugify(articleData.contentBlock.title),
+    slug:
+      slugify(articleData.contentBlock.title) ||
+      `slug-${Math.floor(Math.random() * 10000) + 1}`,
     mainBody: articleData.contentBlock.message,
     asideBody: articleData.contentBlock.aside,
   };
-  console.log("Variables", JSON.stringify(mutationVariables, null, 2));
-  const result = await newDataClient.request(mutation, mutationVariables);
-  console.log("Result", result);
+  const mutationVariablesString = JSON.stringify(mutationVariables, null, 2);
+  console.log("Variables extracted from text file: ", mutationVariablesString);
+
+  const bodyTextMutationResult = await newDataClient.request(bodyTextMutation, {
+    body: mutationVariables.mainBody.raw,
+    heading: mutationVariables.title,
+  });
+  const bodyTextContentBlockID = bodyTextMutationResult.createComponent.id;
+
+  const asideAndBodyCollectionMutation = gql`
+    mutation CreateAsideAndBodyCollection($id: ID!, $asideBody: RichTextAST!) {
+      createCollection(
+        data: {
+          name: "Aside & Body"
+          showHeading: false
+          heading: "Aside & Body Collection Heading"
+          collectionType: AsideAndBody
+          contents: { connect: { Component: { id: $id } } }
+          body: $asideBody
+        }
+      ) {
+        id
+      }
+    }
+  `;
+
+  const asideAndBodyCollectionMutationResult = await newDataClient.request(
+    asideAndBodyCollectionMutation,
+    { id: bodyTextContentBlockID, asideBody: mutationVariables.asideBody.raw }
+  );
+  const asideAndBodyCollectionID =
+    asideAndBodyCollectionMutationResult.createCollection.id;
+
+  const articleMutation = gql`
+    mutation CreateArticle($id: ID!) {
+      createArticle(
+        data: {
+          title: "title"
+          date: "1996-03-15"
+          description: "hello"
+          slug: "this-is-a-slug-example"
+          indexed: true
+          hidden: false
+          featuredImage: {}
+          content: { connect: { Collection: { id: $id } } }
+        }
+      ) {
+        id
+      }
+    }
+  `;
+
+  const articleMutationResult = await newDataClient.request(articleMutation, {
+    id: asideAndBodyCollectionID,
+  });
+  return articleMutationResult.createArticle.id;
 }
 
 transferOldArticlesToNewCMS()
-  .then(() => console.log("Job complete!"))
-  .catch((error) => console.error("Ooops:", error));
+  .then((value) => console.log(`Article created with ID: ${value}`))
+  .catch((error) => console.error("Oops:", error));
