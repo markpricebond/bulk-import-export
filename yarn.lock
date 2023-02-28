@@ -32,6 +32,21 @@
     "@jridgewell/resolve-uri" "^3.0.3"
     "@jridgewell/sourcemap-codec" "^1.4.10"
 
+"@sindresorhus/slugify@^2.2.0":
+  version "2.2.0"
+  resolved "https://registry.yarnpkg.com/@sindresorhus/slugify/-/slugify-2.2.0.tgz#42738974ff19a9a306d3523a8595152998cc758e"
+  integrity sha512-9Vybc/qX8Kj6pxJaapjkFbiUJPk7MAkCh/GFCxIBnnsuYCFPIXKvnLidG8xlepht3i24L5XemUmGtrJ3UWrl6w==
+  dependencies:
+    "@sindresorhus/transliterate" "^1.0.0"
+    escape-string-regexp "^5.0.0"
+
+"@sindresorhus/transliterate@^1.0.0":
+  version "1.6.0"
+  resolved "https://registry.yarnpkg.com/@sindresorhus/transliterate/-/transliterate-1.6.0.tgz#2309fff65a868047e6d2dd70dec747c5b36a8327"
+  integrity sha512-doH1gimEu3A46VX6aVxpHTeHrytJAG6HgdxntYnCFiIFHEM/ZGpG8KiZGBChchjQmG0XFIBL552kBTjVcMZXwQ==
+  dependencies:
+    escape-string-regexp "^5.0.0"
+
 "@tsconfig/node10@^1.0.7":
   version "1.0.9"
   resolved "https://registry.yarnpkg.com/@tsconfig/node10/-/node10-1.0.9.tgz#df4907fc07a886922637b15e02d4cebc4c0021b2"
@@ -124,6 +139,11 @@ dotenv@^16.0.3:
   version "16.0.3"
   resolved "https://registry.yarnpkg.com/dotenv/-/dotenv-16.0.3.tgz#115aec42bac5053db3c456db30cc243a5a836a07"
   integrity sha512-7GO6HghkA5fYG9TYnNxi14/7K9f5occMlp3zXAuSxn7CKCxt9xbNWG7yF8hTCSUchlfWSe3uLmlPfigevRItzQ==
+
+escape-string-regexp@^5.0.0:
+  version "5.0.0"
+  resolved "https://registry.yarnpkg.com/escape-string-regexp/-/escape-string-regexp-5.0.0.tgz#4683126b500b61762f2dbebace1806e8be31b1c8"
+  integrity sha512-/veY75JbMK4j1yjvuUxuVsiS/hr/4iHs9FTT6cgTexxdE0Ly/glccBAkloH/DofkjRbZU3bnoj38mOmhkZ0lHw==
 
 extract-files@^9.0.0:
   version "9.0.0"
