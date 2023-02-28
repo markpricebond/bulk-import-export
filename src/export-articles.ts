@@ -1,6 +1,7 @@
 import { gql, GraphQLClient, request } from "graphql-request";
 import * as dotenv from "dotenv";
-import * as fs from "fs";
+import { readFile, writeFile } from "fs/promises";
+import slugify from "@sindresorhus/slugify";
 dotenv.config();
 
 interface IRichText {
@@ -22,12 +23,6 @@ interface IOldArticleQuery {
   date?: string;
   heading?: string;
   aside?: IRichText;
-}
-
-interface MutationVariables {
-  title: string;
-  mainBody: IRichText;
-  asideBody: IRichText;
 }
 
 async function transferOldArticlesToNewCMS() {
@@ -70,15 +65,46 @@ async function transferOldArticlesToNewCMS() {
   const data = await oldDataClient.request<IOldArticleQuery>(query);
 
   // Write a text file to this directory with the results of query
-  fs.writeFile("queryOutput.txt", JSON.stringify(data), (err) => {
-    if (err) throw err;
-  });
+  await writeFile("queryOutput.json", JSON.stringify(data));
 
   // Mutation to add articles to new CMS project
   const mutation = gql`
-    mutation AddOldArticleToNewProject($title: String!, $mainBody: RichTextAST!, $asideBody: RichTextAST!) {
+    mutation AddOldArticleToNewProject(
+      $title: String!
+      $slug: String!
+      $mainBody: RichTextAST!
+      $asideBody: RichTextAST!
+    ) {
       createArticle(
-        data: {title: $title, date: "2023-02-03T01:00:00Z", description: "Article model doesn't have a summary field yet. We might put this in, but then where would it come from on the original content block?", slug: $title.toLowerCase().replace(/ /g,'-').replace(/[^\w-]+/g,''), indexed: true, hidden: false, featuredImage: {}, content: {create: {Collection: {name: "Aside & Body Title", showHeading: false, heading: "AsideAndBody Collection Heading", collectionType: AsideAndBody, body: $asideBody, contents: {create: {Component: {heading: "heading for the main body component", showHeading: false, componentType: BodyText, body: $mainBody}}}}}}}
+        data: {
+          title: $title
+          date: "2023-02-03T01:00:00Z"
+          description: "Article model doesn't have a summary field yet. We might put this in, but then where would it come from on the original content block?"
+          slug: $slug
+          indexed: true
+          hidden: false
+          featuredImage: {}
+          content: {
+            create: {
+              Collection: {
+                showHeading: false
+                heading: "AsideAndBody Collection Heading"
+                collectionType: AsideAndBody
+                body: $asideBody
+                contents: {
+                  create: {
+                    Component: {
+                      heading: "heading for the main body component"
+                      showHeading: false
+                      componentType: BodyText
+                      body: $mainBody
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       ) {
         id
       }
@@ -95,33 +121,19 @@ async function transferOldArticlesToNewCMS() {
   );
 
   // Look at the newly created text file for the article data
-  fs.readFile("queryOutput.txt", "utf8", function (err, data) {
-    if (err) {
-      throw err;
-    }
-    const articleData = JSON.parse(data);
-    const mutationVariables: MutationVariables = {
-      title: articleData.contentBlock.title,
-      mainBody: articleData.contentBlock.message,
-      asideBody: articleData.contentBlock.aside,
-    };
-    console.log(mutationVariables);
-    executeMutation(mutationVariables).then(
-      function (value) {
-        console.log(value);
-      },
-      function (error) {
-        console.log(error);
-      }
-    );
-  });
-
-  async function executeMutation(mutationVariables: MutationVariables) {
-    const request = await newDataClient.request(mutation, mutationVariables);
-    return request;
-  }
+  const json = await readFile("queryOutput.json", "utf8");
+  const articleData = JSON.parse(json);
+  const mutationVariables = {
+    title: articleData.contentBlock.title,
+    slug: slugify(articleData.contentBlock.title),
+    mainBody: articleData.contentBlock.message,
+    asideBody: articleData.contentBlock.aside,
+  };
+  console.log("Variables", JSON.stringify(mutationVariables, null, 2));
+  const result = await newDataClient.request(mutation, mutationVariables);
+  console.log("Result", result);
 }
 
 transferOldArticlesToNewCMS()
   .then(() => console.log("Job complete!"))
-  .catch(console.error);
+  .catch((error) => console.error("Ooops:", error));
