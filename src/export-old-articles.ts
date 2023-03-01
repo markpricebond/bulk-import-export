@@ -59,7 +59,7 @@ export async function grabOldArticleInfo() {
 
   const allArticlePagesQuery = gql`
     query AllArticlePages {
-      pages(where: { pageType: blog }) {
+      pages(where: { pageType: blog }, first: 10) {
         author
         date
         title
@@ -120,7 +120,9 @@ export async function grabOldArticleInfo() {
     )[0];
 
     const singleArticleVariables = {
-      heading: page.summary ? page.summary.text : null,
+      heading: page.summary
+        ? page.summary.text
+        : "No summary found for this article's page.",
       showHeading: page.summary ? true : false,
       componentType: "BodyText",
       body:
