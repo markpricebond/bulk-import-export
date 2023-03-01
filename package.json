@@ -17,6 +17,8 @@
     "typescript": "^4.9.5"
   },
   "scripts": {
-    "grab-old-articles": "ts-node-esm src/export-old-articles.ts"
-  }
+    "grab-old-articles": "ts-node-esm src/export-old-articles.ts",
+    "create-new-articles": "ts-node-esm src/create-new-articles.ts"
+  },
+  "devDependencies": {}
 }

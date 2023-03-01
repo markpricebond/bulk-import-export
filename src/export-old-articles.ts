@@ -1,7 +1,6 @@
 import { gql, GraphQLClient, request } from "graphql-request";
 import * as dotenv from "dotenv";
 import { readFile, writeFile } from "fs/promises";
-import slugify from "@sindresorhus/slugify";
 dotenv.config();
 
 interface IRichText {
@@ -25,7 +24,30 @@ interface IOldArticleQuery {
   aside?: IRichText;
 }
 
+interface IExtractedBlockInfo {
+  __typename:
+    | "PageLink"
+    | "ContentBlock"
+    | "ImageBlock"
+    | "FormComponent"
+    | "Collection";
+  id: string;
+  title: string;
+  showTitle: boolean | null;
+  message?: IRichText;
+  aside?: IRichText;
+}
+
+export interface INewArticleVariables {
+  heading: string;
+  showHeading: boolean;
+  componentType: string;
+  body: IRichText;
+  aside: IRichText;
+}
+
 export async function grabOldArticleInfo() {
+  // Credentials and endpoint for the old CMS project
   const oldDataClient = new GraphQLClient(
     process.env.PROJECT_1_GRAPHCMS_ENDPOINT,
     {
@@ -43,7 +65,7 @@ export async function grabOldArticleInfo() {
         title
         pageCategory
         summary {
-          raw
+          text
         }
         heroImage {
           fileName
@@ -66,57 +88,9 @@ export async function grabOldArticleInfo() {
             showTitle
             aside {
               raw
-              references {
-                ... on Asset {
-                  fileName
-                  handle
-                  url
-                }
-                ... on Page {
-                  id
-                }
-              }
             }
             message {
               raw
-              references {
-                ... on Asset {
-                  id
-                  fileName
-                  url
-                }
-                ... on Page {
-                  id
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  `;
-
-  // Query to extract a single old content block
-  const singleContentBlockQuery = gql`
-    query OldArticleQuery {
-      contentBlock(where: { id: "cks7d8rx4c2b30c01cizy0cjb" }) {
-        date
-        showDate
-        title
-        showTitle
-        heading
-        gradientColour
-        message {
-          raw
-        }
-        aside {
-          raw
-          references {
-            ... on Asset {
-              id
-            }
-            ... on Page {
-              id
             }
           }
         }
@@ -125,15 +99,11 @@ export async function grabOldArticleInfo() {
   `;
 
   // Execute the query using the endpoint and token
-  const singleBlockData = await oldDataClient.request<IOldArticleQuery>(
-    singleContentBlockQuery
-  );
   const allArticlePagesData = await oldDataClient.request<IOldArticleQuery>(
     allArticlePagesQuery
   );
 
   // Write a text file to this directory with the results of query
-  await writeFile("queryOutput.json", JSON.stringify(singleBlockData));
   await writeFile(
     "allArticlePagesQueryOutput.json",
     JSON.stringify(allArticlePagesData)
@@ -143,47 +113,105 @@ export async function grabOldArticleInfo() {
   const json = await readFile("allArticlePagesQueryOutput.json", "utf8");
   const allArticleData = JSON.parse(json);
 
-  const articleDataInNewFormat = [];
+  const articleDataInNewFormat: Array<INewArticleVariables> = [];
   for (const page of allArticleData.pages) {
     const firstContentBlock = page.blocks.filter(
-      (block) => block.__typename === "ContentBlock"
+      (block: IExtractedBlockInfo) => block.__typename === "ContentBlock"
     )[0];
-    console.log(firstContentBlock);
-    const bodyTextComponentVariables = {
-      heading: page.summary ? page.summary.raw : null,
-      showHeading: true,
+
+    const singleArticleVariables = {
+      heading: page.summary ? page.summary.text : null,
+      showHeading: page.summary ? true : false,
       componentType: "BodyText",
-      body: firstContentBlock ? firstContentBlock.message.raw : null,
+      body:
+        firstContentBlock && firstContentBlock.message
+          ? firstContentBlock.message.raw
+          : {
+              children: [
+                {
+                  type: "paragraph",
+                  children: [
+                    {
+                      text: "No body found for this article (looked inside the message field of the first content block of the page, with type BodyText).",
+                    },
+                  ],
+                },
+              ],
+            },
+      aside:
+        firstContentBlock && firstContentBlock.aside
+          ? firstContentBlock.aside.raw
+          : {
+              children: [
+                {
+                  type: "paragraph",
+                  children: [
+                    {
+                      text: "No aside field for for this article (looked inside the aside field of the first content block of the page, with type BodyText)",
+                    },
+                  ],
+                },
+              ],
+            },
     };
-    articleDataInNewFormat.push(
-      JSON.stringify(bodyTextComponentVariables, null, 2)
-    );
+    articleDataInNewFormat.push(singleArticleVariables);
   }
   return articleDataInNewFormat;
-  // const mutationVariables = {
-  //   title: allArticleData.contentBlock.title,
-  //   slug:
-  //     slugify(allArticleData.contentBlock.title) ||
-  //     `slug-${Math.floor(Math.random() * 10000) + 1}`,
-  //   mainBody: allArticleData.contentBlock.message,
-  //   asideBody: allArticleData.contentBlock.aside,
-  // };
-
-  // const json = await readFile("queryOutput.json", "utf8");
-  // const articleData = JSON.parse(json);
-  // const mutationVariables = {
-  //   title: articleData.contentBlock.title,
-  //   slug:
-  //     slugify(articleData.contentBlock.title) ||
-  //     `slug-${Math.floor(Math.random() * 10000) + 1}`,
-  //   mainBody: articleData.contentBlock.message,
-  //   asideBody: articleData.contentBlock.aside,
-  // };
-
-  // const mutationVariablesString = JSON.stringify(mutationVariables, null, 2);
-  // return mutationVariablesString;
 }
 
 grabOldArticleInfo()
-  .then((value) => console.log(`These are the variables:\n${value}`))
-  .catch((error) => console.error("Oops:", error));
+  .then((value) =>
+    console.log(
+      `Array of ${
+        value.length
+      } variable sets created ✅\n\n\nEach one will be used to create an article...\n\n\nHere is the first one:\n\n${JSON.stringify(
+        value[0]
+      )}\n\n\n\n\n\n`
+    )
+  )
+  .catch((error) => console.error("grabOldArticleInfo failed: ", error));
+
+// Query to extract a single old content block
+// const singleContentBlockQuery = gql`
+//   query OldArticleQuery {
+//     contentBlock(where: { id: "cks7d8rx4c2b30c01cizy0cjb" }) {
+//       date
+//       showDate
+//       title
+//       showTitle
+//       heading
+//       gradientColour
+//       message {
+//         raw
+//       }
+//       aside {
+//         raw
+//         references {
+//           ... on Asset {
+//             id
+//           }
+//           ... on Page {
+//             id
+//           }
+//         }
+//       }
+//     }
+//   }
+// `;
+
+// const singleBlockData = await oldDataClient.request<IOldArticleQuery>(
+//   singleContentBlockQuery
+// );
+
+// await writeFile("queryOutput.json", JSON.stringify(singleBlockData));
+
+// references {
+//   ... on Asset {
+//     fileName
+//     handle
+//     url
+//   }
+//   ... on Page {
+//     id
+//   }
+// }
