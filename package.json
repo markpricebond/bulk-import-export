@@ -18,7 +18,8 @@
   },
   "scripts": {
     "grab-old-articles": "ts-node-esm src/export-old-articles.ts",
-    "create-new-articles": "ts-node-esm src/create-new-articles.ts"
+    "create-new-articles": "ts-node-esm src/create-new-articles.ts",
+    "upload-article-hero-images": "ts-node-esm src/upload-article-hero-images.ts"
   },
   "devDependencies": {}
 }

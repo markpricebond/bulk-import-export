@@ -42,6 +42,7 @@ export interface INewArticleVariables {
   heading: string;
   showHeading: boolean;
   componentType: string;
+  heroImageRemoteURL: string;
   body: IRichText;
   aside: IRichText;
 }
@@ -59,7 +60,7 @@ export async function grabOldArticleInfo() {
 
   const allArticlePagesQuery = gql`
     query AllArticlePages {
-      pages(where: { pageType: blog }, first: 10) {
+      pages(where: { pageType: blog }, first: 1) {
         author
         date
         title
@@ -119,12 +120,19 @@ export async function grabOldArticleInfo() {
       (block: IExtractedBlockInfo) => block.__typename === "ContentBlock"
     )[0];
 
+    const imageHeroBlock = page.blocks.filter(
+      (block: IExtractedBlockInfo) => block.__typename === "ImageBlock"
+    )[0];
+
     const singleArticleVariables = {
       heading: page.summary
         ? page.summary.text
         : "No summary found for this article's page.",
       showHeading: page.summary ? true : false,
       componentType: "BodyText",
+      heroImageRemoteURL: imageHeroBlock
+        ? imageHeroBlock.url
+        : "https://media.graphassets.com/vsEgQ4hXSCyQuKlpEin8",
       body:
         firstContentBlock && firstContentBlock.message
           ? firstContentBlock.message.raw

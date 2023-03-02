@@ -2,9 +2,17 @@ import { gql, GraphQLClient } from "graphql-request";
 import * as dotenv from "dotenv";
 import { grabOldArticleInfo } from "./export-old-articles.js";
 import { INewArticleVariables } from "./export-old-articles.js";
+import { uploadAssetToCMS } from "./upload-article-hero-images.js";
 dotenv.config();
 
-async function createNewArticle(singleArticleVars: INewArticleVariables) {
+async function createNewArticle(
+  singleArticleVars: INewArticleVariables,
+  imageHeroVars: {
+    assetID: string;
+    imageHeroHeading: string;
+    visualName: string;
+  }
+) {
   // Credentials and endpoint for the new CMS project
   const newDataClient = new GraphQLClient(
     process.env.PROJECT_2_GRAPHCMS_ENDPOINT,
@@ -35,7 +43,7 @@ async function createNewArticle(singleArticleVars: INewArticleVariables) {
   const imageHeroMutation = gql`
     mutation CreateAnImageHero(
       $imageHeroHeading: String!
-      $assetID: String!
+      $assetID: ID!
       $visualName: String!
     ) {
       createComponent(
@@ -76,10 +84,7 @@ async function createNewArticle(singleArticleVars: INewArticleVariables) {
 
   // Create an article, and put the AsideAndBody component inside
   const articleMutation = gql`
-    mutation CreateArticle(
-      $asideAndBodyCollectionID: ID!
-      $imageHeroComponentID: ID!
-    ) {
+    mutation CreateArticle($imageHeroComponentID: ID!) {
       createArticle(
         data: {
           title: "title"
@@ -89,12 +94,7 @@ async function createNewArticle(singleArticleVars: INewArticleVariables) {
           indexed: true
           hidden: false
           featuredImage: {}
-          content: {
-            connect: {
-              Collection: { id: $asideAndBodyCollectionID }
-              Component: { id: $imageHeroComponentID }
-            }
-          }
+          content: { connect: { Component: { id: $imageHeroComponentID } } }
         }
       ) {
         id
@@ -102,23 +102,35 @@ async function createNewArticle(singleArticleVars: INewArticleVariables) {
     }
   `;
 
+  // Update the article just created, to add the collection of type AsideAndBody
+  const updateArticleMutation = gql`
+    mutation AddAsideAndBodyToArticle(
+      $asideAndBodyCollectionID: ID!
+      $articleID: ID!
+    ) {
+      updateArticle(
+        data: {
+          content: {
+            connect: {
+              Collection: { where: { id: $asideAndBodyCollectionID } }
+            }
+          }
+        }
+        where: { id: $articleID }
+      ) {
+        id
+      }
+    }
+  `;
+
+  // create body text to retrieve ID
   const bodyTextMutationResult = await newDataClient.request(bodyTextMutation, {
     body: singleArticleVars.body,
     heading: singleArticleVars.heading,
   });
   const bodyTextComponentID = bodyTextMutationResult.createComponent.id;
 
-  const imageHeroMutationResult = await newDataClient.request(
-    imageHeroMutation,
-    {
-      // TO DO: Get an actual asset to use for these variables
-      $imageHeroHeading: "Get this from asset filename",
-      $assetID: Math.floor(Math.random() * 1000) + 1,
-      visualName: "Get this from asset alternate text",
-    }
-  );
-  const imageHeroComponentID = imageHeroMutationResult.createComponent.id;
-
+  // use that ID to create asideAndBody, retrieve an ID for this
   const asideAndBodyCollectionMutationResult = await newDataClient.request(
     asideAndBodyCollectionMutation,
     {
@@ -129,19 +141,38 @@ async function createNewArticle(singleArticleVars: INewArticleVariables) {
   const asideAndBodyCollectionID =
     asideAndBodyCollectionMutationResult.createCollection.id;
 
+  // create an image hero, at the moment we are using the same image, but once we've checked it works we can plug the ID from asset in here
+  const imageHeroMutationResult = await newDataClient.request(
+    imageHeroMutation,
+    imageHeroVars
+  );
+  const imageHeroComponentID = imageHeroMutationResult.createComponent.id;
+
+  // use the image hero ID to create a new article with an image hero
   const articleMutationResult = await newDataClient.request(articleMutation, {
-    asideAndBodyCollectionID: asideAndBodyCollectionID,
     imageHeroComponentID: imageHeroComponentID,
   });
-  return articleMutationResult.createArticle.id;
+
+  // update the article to include the AsideAndBody, using the ID we gathered earlier
+  const articleUpdateResult = await newDataClient.request(
+    updateArticleMutation,
+    {
+      articleID: articleMutationResult.createArticle.id,
+      asideAndBodyCollectionID: asideAndBodyCollectionID,
+    }
+  );
+
+  return articleUpdateResult.updateArticle.id;
 }
 
 grabOldArticleInfo()
   .then((value) => {
     value.forEach((singleArticleVars) => {
-      createNewArticle(singleArticleVars)
-        .then((value) => console.log(`Article created with ID\n${value}`))
-        .catch((error) => console.error("createNewArticles failed:", error));
+      uploadAssetToCMS(singleArticleVars.heroImageRemoteURL).then((value) => {
+        createNewArticle(singleArticleVars, value)
+          .then((value) => console.log(`Article created with ID\n${value}`))
+          .catch((error) => console.error("createNewArticles failed:", error));
+      });
     });
   })
   .catch((error) => console.error("grabOldArticleInfo failed: ", error));
