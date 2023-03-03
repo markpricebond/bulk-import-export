@@ -19,7 +19,8 @@ export const uploadAssetToCMS = async (
   imageHeroHeading: string;
   visualName: string;
 }> => {
-  const data = await fetch(
+  console.log("uploading asset", assetRemoteURL);
+  const res = await fetch(
     `${process.env.PROJECT_2_GRAPHCMS_UPLOAD_ASSET_ENDPOINT}`,
     {
       method: "POST",
@@ -29,26 +30,24 @@ export const uploadAssetToCMS = async (
       },
       body: `url=${encodeURIComponent(assetRemoteURL)}`,
     }
-  )
-    .then((res) => res.json())
-    .then((data: ICreatedAsset) => {
-      console.log(`\n Successfully uploaded asset to CMS, see details:\n`, {
-        assetID: data.id,
-        imageHeroHeading: strippedFilename(data.filename),
-        visualName: `Visual: ${strippedFilename(data.filename)}`,
-      });
-      return {
-        assetID: data.id,
-        imageHeroHeading: strippedFilename(data.filename),
-        visualName: `Visual: ${strippedFilename(data.filename)}`,
-      };
-    })
-    .catch((err) => console.log(err));
-
-  if (!data) {
-    throw Error("couldn't fetch the image");
+  );
+  console.log("Uploaded result: ", res);
+  if (!res.ok) {
+    const message = await res.text();
+    console.log(message);
+    return;
   }
-  return data;
-};
+  const data = (await res.json()) as ICreatedAsset;
 
-uploadAssetToCMS("https://media.graphassets.com/vsEgQ4hXSCyQuKlpEin8");
+  // console.log(`\n Successfully uploaded asset to CMS, see details:\n`, {
+  //   assetID: data.id,
+  //   imageHeroHeading: strippedFilename(data.filename),
+  //   visualName: `Visual: ${strippedFilename(data.filename)}`,
+  // });
+
+  return {
+    assetID: data.id,
+    imageHeroHeading: strippedFilename(data.filename),
+    visualName: `Visual: ${strippedFilename(data.filename)}`,
+  };
+};

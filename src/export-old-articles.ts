@@ -1,6 +1,7 @@
 import { gql, GraphQLClient, request } from "graphql-request";
 import * as dotenv from "dotenv";
 import { readFile, writeFile } from "fs/promises";
+import pThrottle, { ThrottledFunction } from "p-throttle";
 dotenv.config();
 
 interface IRichText {
@@ -39,16 +40,20 @@ interface IExtractedBlockInfo {
 }
 
 export interface INewArticleVariables {
+  title: string;
   heading: string;
   showHeading: boolean;
+  slug: string;
   componentType: string;
   heroImageRemoteURL: string;
   body: IRichText;
   aside: IRichText;
 }
 
+// const rawRequester = oldDC.request;
+// const requester = throttler(rawRequester);
+
 export async function grabOldArticleInfo() {
-  // Credentials and endpoint for the old CMS project
   const oldDataClient = new GraphQLClient(
     process.env.PROJECT_1_GRAPHCMS_ENDPOINT,
     {
@@ -57,10 +62,9 @@ export async function grabOldArticleInfo() {
       },
     }
   );
-
   const allArticlePagesQuery = gql`
     query AllArticlePages {
-      pages(where: { pageType: blog }, first: 1) {
+      pages(where: { pageType: blog }) {
         author
         date
         title
@@ -100,9 +104,9 @@ export async function grabOldArticleInfo() {
   `;
 
   // Execute the query using the endpoint and token
-  const allArticlePagesData = await oldDataClient.request<IOldArticleQuery>(
+  const allArticlePagesData = (await oldDataClient.request(
     allArticlePagesQuery
-  );
+  )) as IOldArticleQuery;
 
   // Write a text file to this directory with the results of query
   await writeFile(
@@ -115,6 +119,8 @@ export async function grabOldArticleInfo() {
   const allArticleData = JSON.parse(json);
 
   const articleDataInNewFormat: Array<INewArticleVariables> = [];
+
+  let counter = 1;
   for (const page of allArticleData.pages) {
     const firstContentBlock = page.blocks.filter(
       (block: IExtractedBlockInfo) => block.__typename === "ContentBlock"
@@ -123,15 +129,20 @@ export async function grabOldArticleInfo() {
     const imageHeroBlock = page.blocks.filter(
       (block: IExtractedBlockInfo) => block.__typename === "ImageBlock"
     )[0];
-
-    const singleArticleVariables = {
+    console.log(
+      `\nSearched "${page.title}" for image hero, found:\n`,
+      imageHeroBlock ? imageHeroBlock : `Nothing`
+    );
+    const singleArticleVariables: INewArticleVariables = {
+      title: `Article: ${counter}`,
+      slug: `article/${counter}`,
       heading: page.summary
         ? page.summary.text
         : "No summary found for this article's page.",
       showHeading: page.summary ? true : false,
       componentType: "BodyText",
       heroImageRemoteURL: imageHeroBlock
-        ? imageHeroBlock.url
+        ? imageHeroBlock.image.url
         : "https://media.graphassets.com/vsEgQ4hXSCyQuKlpEin8",
       body:
         firstContentBlock && firstContentBlock.message
@@ -165,6 +176,7 @@ export async function grabOldArticleInfo() {
             },
     };
     articleDataInNewFormat.push(singleArticleVariables);
+    counter++;
   }
   return articleDataInNewFormat;
 }
@@ -172,56 +184,7 @@ export async function grabOldArticleInfo() {
 grabOldArticleInfo()
   .then((value) =>
     console.log(
-      `Array of ${
-        value.length
-      } variable sets created ✅\n\n\nEach one will be used to create an article...\n\n\nHere is the first one:\n\n${JSON.stringify(
-        value[0]
-      )}\n\n\n\n\n\n`
+      `\n\n\nArray of ${value.length} variable sets created ✅\n\n\nEach one will be used to create an article...`
     )
   )
   .catch((error) => console.error("grabOldArticleInfo failed: ", error));
-
-// Query to extract a single old content block
-// const singleContentBlockQuery = gql`
-//   query OldArticleQuery {
-//     contentBlock(where: { id: "cks7d8rx4c2b30c01cizy0cjb" }) {
-//       date
-//       showDate
-//       title
-//       showTitle
-//       heading
-//       gradientColour
-//       message {
-//         raw
-//       }
-//       aside {
-//         raw
-//         references {
-//           ... on Asset {
-//             id
-//           }
-//           ... on Page {
-//             id
-//           }
-//         }
-//       }
-//     }
-//   }
-// `;
-
-// const singleBlockData = await oldDataClient.request<IOldArticleQuery>(
-//   singleContentBlockQuery
-// );
-
-// await writeFile("queryOutput.json", JSON.stringify(singleBlockData));
-
-// references {
-//   ... on Asset {
-//     fileName
-//     handle
-//     url
-//   }
-//   ... on Page {
-//     id
-//   }
-// }

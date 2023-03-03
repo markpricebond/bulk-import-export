@@ -3,16 +3,20 @@ import * as dotenv from "dotenv";
 import { grabOldArticleInfo } from "./export-old-articles.js";
 import { INewArticleVariables } from "./export-old-articles.js";
 import { uploadAssetToCMS } from "./upload-article-hero-images.js";
+import pThrottle from "p-throttle";
+import slugify from "@sindresorhus/slugify";
 dotenv.config();
 
-async function createNewArticle(
+const throttler = pThrottle({ limit: 2, interval: 1000 });
+
+const createNewArticle = async (
   singleArticleVars: INewArticleVariables,
-  imageHeroVars: {
+  imageHeroVars?: {
     assetID: string;
     imageHeroHeading: string;
     visualName: string;
   }
-) {
+): Promise<string> => {
   // Credentials and endpoint for the new CMS project
   const newDataClient = new GraphQLClient(
     process.env.PROJECT_2_GRAPHCMS_ENDPOINT,
@@ -84,17 +88,40 @@ async function createNewArticle(
 
   // Create an article, and put the AsideAndBody component inside
   const articleMutation = gql`
-    mutation CreateArticle($imageHeroComponentID: ID!) {
+    mutation CreateArticle(
+      $articleTitle: String!
+      $articleSlug: String!
+      $imageHeroComponentID: ID!
+    ) {
       createArticle(
         data: {
-          title: "title"
+          title: $articleTitle
           date: "1996-03-15"
           description: "Random description for now..."
-          slug: "this-is-a-slug-example"
+          slug: $articleSlug
           indexed: true
           hidden: false
           featuredImage: {}
           content: { connect: { Component: { id: $imageHeroComponentID } } }
+        }
+      ) {
+        id
+      }
+    }
+  `;
+
+  // same mutation as above but without image hero
+  const articleWithoutImageMutation = gql`
+    mutation CreateArticle($articleTitle: String!, $articleSlug: String!) {
+      createArticle(
+        data: {
+          title: $articleTitle
+          date: "1996-03-15"
+          description: "Random description for now..."
+          slug: $articleSlug
+          indexed: true
+          hidden: false
+          featuredImage: {}
         }
       ) {
         id
@@ -141,38 +168,92 @@ async function createNewArticle(
   const asideAndBodyCollectionID =
     asideAndBodyCollectionMutationResult.createCollection.id;
 
-  // create an image hero, at the moment we are using the same image, but once we've checked it works we can plug the ID from asset in here
-  const imageHeroMutationResult = await newDataClient.request(
-    imageHeroMutation,
-    imageHeroVars
-  );
-  const imageHeroComponentID = imageHeroMutationResult.createComponent.id;
+  // create an image hero
+  const imageHeroMutationResult = imageHeroVars
+    ? await newDataClient.request(imageHeroMutation, imageHeroVars)
+    : undefined;
+
+  const imageHeroComponentID = imageHeroMutationResult
+    ? imageHeroMutationResult.createComponent.id
+    : undefined;
 
   // use the image hero ID to create a new article with an image hero
-  const articleMutationResult = await newDataClient.request(articleMutation, {
-    imageHeroComponentID: imageHeroComponentID,
-  });
+  const articleMutationResult = imageHeroComponentID
+    ? await newDataClient.request(articleMutation, {
+        articleTitle: singleArticleVars.heading,
+        articleSlug: singleArticleVars.slug,
+        imageHeroComponentID: imageHeroComponentID,
+      })
+    : await newDataClient.request(articleWithoutImageMutation, {
+        articleTitle: singleArticleVars.heading,
+        articleSlug: singleArticleVars.slug,
+      });
 
   // update the article to include the AsideAndBody, using the ID we gathered earlier
-  const articleUpdateResult = await newDataClient.request(
-    updateArticleMutation,
-    {
+  const articleUpdateResult: { updateArticle: { id: string } } =
+    await newDataClient.request(updateArticleMutation, {
       articleID: articleMutationResult.createArticle.id,
       asideAndBodyCollectionID: asideAndBodyCollectionID,
-    }
-  );
+    });
 
   return articleUpdateResult.updateArticle.id;
+};
+
+async function grabStuff() {
+  const info = await grabOldArticleInfo();
+  for (const article of info) {
+    console.log("This is the articles details", article);
+    const result = await uploadAssetToCMS(article.heroImageRemoteURL);
+    console.log(
+      result
+        ? `Uploaded asset to CMS\n ${result}`
+        : `No asset to upload for image hero`
+    );
+    const newArticle = result
+      ? await createNewArticle(article, result)
+      : await createNewArticle(article);
+  }
 }
 
-grabOldArticleInfo()
-  .then((value) => {
-    value.forEach((singleArticleVars) => {
-      uploadAssetToCMS(singleArticleVars.heroImageRemoteURL).then((value) => {
-        createNewArticle(singleArticleVars, value)
-          .then((value) => console.log(`Article created with ID\n${value}`))
-          .catch((error) => console.error("createNewArticles failed:", error));
-      });
-    });
-  })
-  .catch((error) => console.error("grabOldArticleInfo failed: ", error));
+grabStuff()
+  .then((res) => console.log("done"))
+
+  .catch((error) => console.log(error));
+
+// grabOldArticleInfo().then((value) => {
+//   value.forEach((singleArticleVars) => {
+//     try {
+//       console.log(singleArticleVars.heroImageRemoteURL);
+//       uploadAssetToCMS(singleArticleVars.heroImageRemoteURL)
+//         .then((res) => {
+//           console.log(res);
+//           return createNewArticle(singleArticleVars, res);
+//         })
+//         .catch((error) => console.log(error));
+//     } catch (error) {
+//       console.log(error);
+//     }
+//   });
+// });
+
+// grabOldArticleInfo()
+//   .then((value) => {
+//     value.forEach((singleArticleVars) => {
+//       try {
+//         uploadAssetToCMS(singleArticleVars.heroImageRemoteURL).then(
+//           (response) => {
+//             console.log(response);
+//             createNewArticle(singleArticleVars, response).then((articleID) =>
+//               console.log(`New article created, ID: ${articleID}`)
+//             );
+//           }
+//         );
+//       } catch (error) {
+//         if (error) {
+//           console.log("createNewArticle failed:\n");
+//           return error.message;
+//         }
+//       }
+//     });
+//   })
+//   .catch((error) => console.error("grabOldArticleInfo failed: ", error));
